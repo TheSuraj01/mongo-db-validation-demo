@@ -1,0 +1,30 @@
+name: Mongo DB Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  validate-db:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Call Backend API
+        run: |
+          echo "Calling API..."
+
+          RESPONSE=$(curl -s "https://abc123.ngrok-free.app/api/validate-env?vault_name=LIMS&project_type=LIMSBasicsDryRun26R1")
+
+          echo "Response: $RESPONSE"
+
+          STATUS=$(echo $RESPONSE | jq -r '.status')
+
+          if [ "$STATUS" = "FAIL" ]; then
+            echo "❌ Validation Failed"
+            exit 1
+          else
+            echo "✅ Validation Passed"
+          fi
