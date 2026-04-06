@@ -59,6 +59,15 @@ jobs:
           
           # Read status from JSON
           if [ -f response.json ]; then
+            # Verify if response is valid JSON before parsing it
+            if ! jq -e . >/dev/null 2>&1 <response.json; then
+              echo "::error::Response is not valid JSON. This usually indicates the endpoint is offline or returning an HTML error page."
+              echo "::group::Response Content"
+              cat response.json
+              echo "::endgroup::"
+              exit 1
+            fi
+
             STATUS=$(jq -r '.status' response.json)
             if [ "$STATUS" == "FAIL" ]; then
               echo "::error::Validation Failed! Check response.json for details."
