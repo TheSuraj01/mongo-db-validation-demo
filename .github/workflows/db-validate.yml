@@ -1,30 +1,78 @@
-name: Mongo DB Validation
+name: Trigger Diff Validation
 
 on:
-  pull_request:
-    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      project_type:
+        description: 'Select Project Type'
+        required: true
+        type: choice
+        options:
+          - LIMS
+          - QMS
+          - QualityDocs
+      vault_name:
+        description: 'Select Vault Name'
+        required: true
+        type: choice
+        options:
+          - LIMSBasicsDryRun26R1
+          - LIMSBasicsDryRun26R2
+          - LIMSBasicsDryRun26R3
 
 jobs:
-  validate-db:
+  validate-diff:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Call Backend API
+      - name: Trigger Backend API
+        id: trigger
         run: |
-          echo "Calling API..."
-
-          RESPONSE=$(curl -s "https://abc123.ngrok-free.app/api/validate-env?vault_name=LIMS&project_type=LIMSBasicsDryRun26R1")
-
-          echo "Response: $RESPONSE"
-
-          STATUS=$(echo $RESPONSE | jq -r '.status')
-
-          if [ "$STATUS" = "FAIL" ]; then
-            echo "❌ Validation Failed"
+          # Replace $BACKEND_URL with your actual backend or define it in GitHub Secrets.
+          # For example, curl -X POST ${{ secrets.BACKEND_URL }}/api/validate-env
+          
+          echo "Triggering validation for Vault: ${{ inputs.vault_name }} and Project: ${{ inputs.project_type }}"
+          
+          # Using a mock API logic for now until your real URL is configured:
+          # We send the inputs to the backend. We use -o to save the zip file directly (if the response is a file).
+          # Or we capture JSON for status check.
+          
+          # This command assumes the server responds with JSON containing { status: "PASS" | "FAIL", summary, file: "path" }
+          # and if FAIL, there is a second endpoint to download the file OR the server returns the zip directly if we change it.
+          # For now, let's just make the POST request and log the output.
+          
+          TARGET_URL="${{ secrets.BACKEND_URL }}/api/validate-env"
+          
+          # Fallback to local host if testing via some proxy, but normally it relies on secrets
+          if [ -z "${{ secrets.BACKEND_URL }}" ]; then
+            echo "BACKEND_URL secret is not set! Using http://localhost:3000 as placeholder. It will likely fail."
+            TARGET_URL="http://localhost:3000/api/validate-env"
+          fi
+          
+          HTTP_STATUS=$(curl -s -w "%{http_code}" -o response.json -X POST "$TARGET_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"vault_name":"${{ inputs.vault_name }}", "project_type":"${{ inputs.project_type }}"}')
+            
+          echo "HTTP Status: $HTTP_STATUS"
+          cat response.json
+          
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Backend request failed with status $HTTP_STATUS"
+            exit 1
+          fi
+          
+          # Read status from JSON
+          STATUS=$(jq -r '.status' response.json)
+          if [ "$STATUS" == "FAIL" ]; then
+            echo "::error::Validation Failed! Check response.json for details."
             exit 1
           else
-            echo "✅ Validation Passed"
+            echo "Validation Passed!"
           fi
+          
+      - name: Upload Response Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-response
+          path: response.json
+          retention-days: 7
